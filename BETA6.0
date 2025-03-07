@@ -1,0 +1,169 @@
+##############Phase 2 β diversity calcs
+
+
+########## β.a PERMANOVA calculations/ loading code
+
+##  load packages necessary to β diversity statistical analysis
+require(vegan)
+library(ggplot2)
+library(dplyr)
+
+## read in the data with read.csv
+community <- read.csv("DIS/Data/PEAR1.csv", header = TRUE)
+meta <- read.csv("DIS/Data/meta_data.csv", header = T)
+
+setdiff(meta$Sample.ID, community$Sample.ID)
+
+
+community <- na.omit(community)
+colnames(community)[1] <- "Sample.ID"
+meta_names <- meta %>% select (Sample.ID)
+community <- left_join(meta_names, community, by = 'Sample.ID')
+
+
+
+## PERMANOVA TEST 
+## run the permanova analysis - here we are running separate tests for each of our factors
+## try running a test with multiple factors too if you want to see what that looks like
+## site
+
+com_test_site <- adonis2(community[,-1] ~ site, data = meta, method="bray") ########PERMANOVA for site as predictor variable ∴ effect of different sites on community composition
+print(com_test_site)
+
+com_test_xdepth11 <- adonis2(community[,-c(1:2)] ~ Depth, data = meta, method = "bray") # adonis2 - PERMANOVA Depth as predictor variable  ∴ effect of depth on community composition
+com_test_xdepth1 <- adonis(community[,-c(1:2)] ~ Depth, data = meta, method = "bray") #adonis - used for ..
+print(com_test_xdepth11)
+
+com_test_multifactor <- adonis2(community[,-1] ~ site + Depth, data = meta, method = "bray") #Attempt at assessing site + depth combined. Probably deleate as no direct use and not certain valid
+summary(com_test_multifactor)
+
+
+########## β.b Non-Metric Multidimensional Scaling (NMDS)
+########## Contact Xavier Harison - Suggestions on NMDS analysis coupled with potential to use depth categories used in Co-ocurrence analysis then test with a ANOSIM 
+########## https://jkzorz.github.io/2019/06/06/NMDS.html
+
+### Initial NMDS working 
+nmds <- metaMDS(community[,-c(1:2)], distance = "bray")
+plot(nmds, type = "t")
+ordiellipse(nmds, groups = meta$Depth, col = 1:3)
+scores(nmds)
+data.scores = as.data.frame(scores(nmds)$sites)
+data.scores$depth<-meta$Depth
+
+## Jamie Barnes assisted - NMDS Produced to assess each images position on plot, coupled with continuous depth data 
+xx = ggplot(data.scores, aes(x = NMDS1, y = NMDS2)) + 
+  geom_point(size = 4, aes(col = depth)) + 
+  labs(x = "NMDS1", colour = "Depth", y = "NMDS2")
+
+xx
+
+data.scores = as.data.frame(scores(nmds)$species)
+
+
+## Jamie Barnes assisted - NMDS Produced to assess each OTU position on plot, 
+xx = ggplot(data.scores, aes(x = NMDS1, y = NMDS2, label = rownames(data.scores))) + 
+  geom_point(size = 4, shape = 4) + 
+  labs(x = "NMDS1", y = "NMDS2") +
+  geom_text()
+
+xx
+rownames(data.scores)
+
+
+
+###β.c Unsucsesful code to assess; Pairwise Comparisons: Uses Bray-Curtis dissimilarity to compare beta diversity between pairs of sites. 
+##  PERMANOVA Tests: Tests for significant differences in community composition by site and optionally by depth.
+## source("DIS/Code/Beta3Unsucsesful.R")
+
+
+
+
+
+### β.d - Top taxa coefficient plot
+##produced utilising code from microbiome; https://microbiome.github.io/course_2021_radboud/beta-diversity.html#examples-of-pcoa-with-different-settings
+# Load necessary libraries specific to top taxa coefficients (ggplot2- Wickham 2016) (dplyr - Wickham 2023)
+library(vegan)
+library(ggplot2)
+library(dplyr)
+
+
+community <- read.csv("DIS/Data/PEAR1.csv", header = TRUE)
+meta <- read.csv("DIS/Data/meta_data.csv", header = T)
+
+# Ensure data is clean and prepared
+community <- na.omit(community)
+colnames(community)[1] <- "Sample.ID"
+
+# Join the community data with metadata to ensure alignment
+community <- left_join(meta %>% select(Sample.ID, site), community, by = "Sample.ID")
+
+# Compute Bray-Curtis dissimilarity
+bray_dist <- vegdist(community[,-c(1, 2)], method = "bray")
+
+# Perform constrained ordination (dbRDA)
+dbRDA_result <- capscale(bray_dist ~ site, data = community)
+summary(dbRDA_result)
+
+com_test_xdepth1 <- adonis(community[,-c(1:2)] ~ Depth, data = meta, method = "bray") #adonis - used for Top taxa
+coef<-coefficients(com_test_xdepth1)["Depth",] # adonis used because coefficients code works, check for adonis2
+
+# Extract the coefficients for the first axis
+#coef <- dbRDA_result$CCA$biplot[, 1]          was previously used
+
+# Get the top 20 taxa based on their absolute coefficient values
+top_coef <- sort(head(coef[rev(order(abs(coef)))], 20))
+top_coef
+
+# Create a data frame for plotting
+top_coef_df <- data.frame(
+  Taxa = factor(names(top_coef), levels = names(top_coef)), # Factor for ordered plotting
+  Coefficient = top_coef
+)
+
+top_taxa_coeffient_plot <- ggplot(data.frame(x = top_coef,
+                                             y = factor(names(top_coef),
+                                                        unique(names(top_coef)))),
+                                  aes(x = x, y = y)) +
+  geom_bar(stat="identity") +
+  labs(x="", y="", title="Top Taxa") +
+  theme_bw()
+
+top_taxa_coeffient_plot # Plotting the top taxa coefficients
+
+
+
+######Inspecting bray_dist to assess issues previously occurring, not necessary for final draft however produces interesting
+# Assuming `bray_dist` is already computed
+bray_dist_plot <- as.data.frame(as.matrix(bray_dist))
+bray_dist_plot$Sample.ID <- rownames(bray_dist_plot)
+
+# Melt the distance matrix for ggplot
+library(reshape2)
+bray_dist_melted <- melt(bray_dist_plot, id.vars = "Sample.ID")
+
+# Plot
+ggplot(bray_dist_melted, aes(x = Sample.ID, y = variable, fill = value)) +
+  geom_tile() +
+  labs(x = "Sample ID", y = "Sample ID", title = "Bray-Curtis Dissimilarity Matrix") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
