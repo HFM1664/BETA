@@ -1,0 +1,39 @@
+#### Top taxa coefficient plot
+### produced using code from microbiome 
+
+# Load necessary libraries
+library(vegan)
+library(ggplot2)
+library(dplyr)
+
+community <- read.csv("DIS/Data/PEAR1.csv", header = TRUE)
+meta <- read.csv("DIS/Data/meta_data.csv", header = T)
+
+# Ensure data is clean and prepared
+community <- na.omit(community)
+colnames(community)[1] <- "Sample.ID"
+
+# Join the community data with metadata to ensure alignment
+community <- left_join(meta %>% select(Sample.ID, site), community, by = "Sample.ID")
+
+# Compute Bray-Curtis dissimilarity
+bray_dist <- vegdist(community[,-c(1, 2)], method = "bray")
+
+# Perform constrained ordination (dbRDA)
+dbRDA_result <- capscale(bray_dist ~ site, data = community)
+
+coef <- dbRDA_result$CCA$biplot[, 1] # Get the biplot scores for the first axis
+
+top_coef <- sort(head(coef[rev(order(abs(coef)))], 20))
+
+top_coef_df <- data.frame(
+  Taxa = factor(names(top_coef), levels = names(top_coef)), # Factor for ordered plotting
+  Coefficient = top_coef
+)
+
+top_taxa_plot <- ggplot(top_coef_df, aes(x = Coefficient, y = Taxa)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Coefficient", y = "Taxa", title = "Top 20 Taxa by Coefficients (dbRDA)") +
+  theme_minimal()
+
+print(top_taxa_plot)
