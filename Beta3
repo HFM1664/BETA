@@ -1,0 +1,80 @@
+# Load necessary libraries
+library(vegan)
+library(ggplot2)
+library(dplyr)
+
+community <- read.csv("DIS/Data/PEAR1.csv", header = TRUE)
+meta <- read.csv("DIS/Data/meta_data.csv", header = T)
+
+
+# Clean and prepare data
+community <- na.omit(community)
+colnames(community)[1] <- "Sample.ID"
+
+# Join community and metadata
+community <- left_join(meta %>% select(Sample.ID, site), community, by = "Sample.ID")
+
+# Function to analyze a single site
+analyze_site <- function(site_name, community, num_top_taxa = 20) {
+  # Subset data for the specific site
+  site_data <- community %>% filter(site == site_name)
+  
+  # Ensure the taxa columns are numeric
+  taxa_data <- site_data[,-c(1, 2)]
+  taxa_data <- as.data.frame(sapply(taxa_data, as.numeric))
+  
+  # Check if there is enough variation
+  if (nrow(taxa_data) < 2 || all(rowSums(taxa_data) == 0)) {
+    warning(paste("Insufficient data for site:", site_name, "- Skipping analysis."))
+    return(NULL)
+  }
+  
+  # Compute Bray-Curtis dissimilarity
+  bray_dist <- vegdist(taxa_data, method = "bray")
+  
+  # Perform constrained ordination (dbRDA)
+  dbRDA_result <- capscale(bray_dist ~ 1) # No predictors
+  
+  # Check if biplot coefficients exist
+  if (is.null(dbRDA_result$CCA$biplot)) {
+    warning(paste("No biplot coefficients found for site:", site_name, "- Skipping."))
+    return(NULL)
+  }
+  
+  # Extract coefficients for taxa
+  coef <- dbRDA_result$CCA$biplot[, 1] # First axis coefficients
+  
+  # Ensure coefficients are numeric
+  coef <- as.numeric(coef)
+  
+  # Identify top taxa with the largest absolute coefficients
+  top_coef <- sort(head(coef[rev(order(abs(coef)))], num_top_taxa))
+  
+  # Create a data frame for plotting
+  data.frame(
+    Taxa = factor(names(top_coef), levels = names(top_coef)),
+    Coefficient = top_coef,
+    Site = site_name
+  )
+}
+
+# List of unique sites
+sites <- unique(community$site)
+
+# Analyze each site and combine results
+results_list <- lapply(sites, function(site) analyze_site(site, community))
+results <- do.call(rbind, results_list[!sapply(results_list, is.null)]) # Remove NULL results
+
+# Plot the results if any data exists
+if (!is.null(results) && nrow(results) > 0) {
+  top_taxa_plot <- ggplot(results, aes(x = Coefficient, y = Taxa, fill = Site)) +
+    geom_bar(stat = "identity", position = "dodge") +
+    facet_wrap(~Site, scales = "free_y") +
+    labs(x = "Coefficient", y = "Taxa", title = "Top Taxa by Site") +
+    theme_minimal()
+  
+  print(top_taxa_plot)
+} else {
+  print("No valid results to plot.")
+}
+
