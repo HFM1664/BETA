@@ -1,0 +1,116 @@
+########## Beta diversity calculation
+
+##  load packages we need for the session
+require(vegan)
+
+## read in the data with read.csv
+community <- read.csv("DIS/Data/PEAR1.csv", header = TRUE)
+meta <- read.csv("DIS/Data/meta_data.csv", header = T)
+
+head(community)
+
+setdiff(meta$Sample.ID, community$Sample.ID)
+
+
+community <- na.omit(community)
+colnames(community)[1] <- "Sample.ID"
+meta_names <- meta %>% select (Sample.ID)
+community <- left_join(meta_names, community, by = 'Sample.ID')
+
+
+
+com_test_site <- adonis2(community[,-1] ~ site, data = meta, method="bray")
+print(com_test_site)
+## PERMANOVA TEST ##
+## run the permanova analysis - here we are running separate tests for each of our factors
+## try running a test with multiple factors too if you want to see what that looks like
+## site
+
+
+
+com_test_xdepth1 <- adonis2(community[,-1] ~ Depth, data = meta, method = "bray")
+com_test_multifactor <- adonis2(community[,-1] ~ site + Depth, data = meta, method = "bray")
+
+summary(com_test_xdepth1)
+summary(com_test_multifactor)
+
+
+########## Non-Metric Multidimensional Scaling (NMDS)
+nmds <- metaMDS(community[,-1], distance = "bray")
+plot(nmds, type = "t")
+ordiellipse(nmds, groups = meta$site, col = 1:3)
+
+summary(meta)  # Provides min, max, mean, and NA counts for all variables
+str(meta)      # Displays data types and structure
+
+
+
+
+# Run pairwise comparisons
+require(cluster)
+library(pairwiseAdonis)
+
+# Check metadata structure
+head(meta)
+
+# Ensure 'site' is a factor
+meta$site <- as.factor(meta$site)
+# Exclude Sample.ID and metadata columns to focus on community data
+community_matrix <- community[ , !(colnames(community) %in% c("Sample.ID", "site"))]
+
+bray_dist <- vegdist(community_matrix, method = "bray")
+pairwise_results <- pairwise.adonis(bray_dist, community$site, sim.method = "bray")#####Issue presenting itself
+# View results
+print(pairwise_results)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+######## Excperimenting with site dependent plot
+# Step 1: PERMANOVA for beta diversity by site
+com_test_site <- adonis2(community[,-1] ~ site, data = meta, method = "bray")
+site_permanova_results <- data.frame(
+  Factor = "Site",
+  R2 = com_test_site$R2[1],
+  p_value = com_test_site$`Pr(>F)`[1]
+)
+
+# Optional: Add depth as a second factor if needed
+com_test_xdepth <- adonis2(community[,-1] ~ depth, data = meta, method = "bray")
+depth_permanova_results <- data.frame(
+  Factor = "Depth",
+  R2 = com_test_xdepth$R2[1],
+  p_value = com_test_xdepth$`Pr(>F)`[1]
+)
+
+# Step 2: Pairwise beta diversity tests
+bray_dist <- vegdist(community_matrix, method = "bray")
+pairwise_results <- pairwise.adonis(bray_dist, meta$site, sim.method = "bray")
+
+# Clean pairwise results for a summary table
+pairwise_results_table <- data.frame(
+  Comparison = pairwise_results$pairs,
+  R2 = pairwise_results$R2,
+  p_value = pairwise_results$p.value
+)
+
+# Step 3: Combine PERMANOVA and pairwise results into a single table
+beta_diversity_table <- list(
+  PERMANOVA = rbind(site_permanova_results, depth_permanova_results),
+  Pairwise_Comparisons = pairwise_results_table
+)
+
+# Step 4: Export tables for review
+write.csv(beta_diversity_table$PERMANOVA, "~/DIS/Data/beta_diversity_permanova.csv", row.names = FALSE)
+write.csv(beta_diversity_table$Pairwise_Comparisons, "~/DIS/Data/beta_diversity_pairwise.csv", row.names = FALSE)
