@@ -1,0 +1,59 @@
+summary(meta)  # Provides min, max, mean, and NA counts for all variables
+str(meta)  # Displays data types and structure
+
+# Run pairwise comparisons
+require(cluster)
+library(pairwiseAdonis)
+
+# Check metadata structure
+head(meta)
+
+# Ensure 'site' is a factor
+meta$site <- as.factor(meta$site)
+# Exclude Sample.ID and metadata columns to focus on community data
+community_matrix <- community[ , !(colnames(community) %in% c("Sample.ID", "site"))]
+
+bray_dist <- vegdist(community_matrix, method = "bray")
+pairwise_results <- pairwise.adonis(bray_dist, community$site, sim.method = "bray")#####Issue presenting itself
+# View results
+print(pairwise_results)
+
+######## Attempting to create nmds with site dependent plot
+# Step 1: PERMANOVA for beta diversity by site
+com_test_site <- adonis2(community[,-1] ~ site, data = meta, method = "bray")
+site_permanova_results <- data.frame(
+  Factor = "Site",
+  R2 = com_test_site$R2[1],
+  p_value = com_test_site$`Pr(>F)`[1]
+)
+
+# Optional: Add depth as a second factor if needed
+com_test_xdepth <- adonis2(community[,-1] ~ depth, data = meta, method = "bray")
+depth_permanova_results <- data.frame(
+  Factor = "Depth",
+  R2 = com_test_xdepth$R2[1],
+  p_value = com_test_xdepth$`Pr(>F)`[1]
+)
+
+# Step 2: Pairwise beta diversity tests
+bray_dist <- vegdist(community_matrix, method = "bray")
+pairwise_results <- pairwise.adonis(bray_dist, meta$site, sim.method = "bray")
+
+# Clean pairwise results for a summary table
+pairwise_results_table <- data.frame(
+  Comparison = pairwise_results$pairs,
+  R2 = pairwise_results$R2,
+  p_value = pairwise_results$p.value
+)
+
+# Step 3: Combine PERMANOVA and pairwise results into a single table
+beta_diversity_table <- list(
+  PERMANOVA = rbind(site_permanova_results, depth_permanova_results),
+  Pairwise_Comparisons = pairwise_results_table
+)
+
+# Step 4: Export tables for review
+write.csv(beta_diversity_table$PERMANOVA, "~/DIS/Data/beta_diversity_permanova.csv", row.names = FALSE)
+write.csv(beta_diversity_table$Pairwise_Comparisons, "~/DIS/Data/beta_diversity_pairwise.csv", row.names = FALSE)
+
+
